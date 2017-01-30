@@ -1,0 +1,127 @@
+#!/bin/bash
+
+set -e
+
+KERNEL_MAJOR="${KERNEL_MAJOR:-4.4.0}"
+BUILD_TYPE="${BUILD_TYPE:-fast}"
+BUILD_CLEAN="${BUILD_CLEAN:-n}"
+BUILD_TAG="${BUILD_TAG:-hardcore}"
+
+
+function get-latest-kernel-version() {
+  # find the latest kernel in the given line
+  apt-cache search linux-image-${KERNEL_MAJOR}- | grep -ioP "(?<=linux-image-)${KERNEL_MAJOR}-\d+(?=-generic)" | sort -r | head -1
+}
+
+function install-kernel-source() {
+  # source the kernel
+  apt-get source linux-image-$(get-latest-kernel-version)-generic
+}
+
+function patch-kernel() {
+  (
+    cd linux-${KERNEL_MAJOR}
+    find /patches -type f -iname '*.patch' | sort -n | while read patch_file ; do
+      # patch files
+      patch -p1 -N < $patch_file || rc=$?
+      # if the patch returned non-zero, it could just have been skipped as already applied
+      if [ $rc -gt 1 ]; then
+        echo "Patch: $patch_file failed." >&2
+        exit $rc
+      fi
+    done
+  )
+}
+
+function configure-kernel() {
+  (
+    # so in debian.master/config/amd64/config.* are defined kernel config lines.
+    # to allow custom config entries, get the value of env and grep for all
+    # CONFIG_* entries.
+    # for each of these, see if there is an uncommented line in those files
+    echo
+  )
+}
+
+function update-kernel-version() {
+  (
+    cd linux-${KERNEL_MAJOR}
+
+    local latest_kernel=$(head -n 1 debian.master/changelog | grep -oP '(?<=\()[^)]+(?=\))')
+    local latest_kernel_tag="$(echo $latest_kernel | grep -oP "(?<=\+)${build_tag}$")"
+
+    if [ "$latest_kernel_tag" != "$build_tag" ]; then
+      # tag it up
+      local line="$(head -n 1 debian.master/changelog)"
+      local before="$(echo "$line" | grep -oP '^.*\(')"
+      local after="$(echo "$line" | grep -oP '\).*$')"
+
+      sed -i "1 s|^.*$|${before}${latest_kernel}+${build_tag}${after}|" debian.master/changelog
+    fi
+  )
+}
+
+function build-kernel() {
+  (
+    cd linux-${KERNEL_MAJOR}
+
+    local build_clean="$BUILD_CLEAN"
+    local build_type="$BUILD_TYPE"
+    local build_tag="$BUILD_TAG"
+    local build_cmd="$BUILD_CMD"
+
+    # unset these so they don't propagate into the build
+    unset BUILD_CLEAN BUILD_TYPE BUILD_TAG BUILD_CMD
+
+    if [[ "${build_clean}" != "n" ]]; then
+      fakeroot debian/rules clean
+    fi
+
+    if [[ "${build_type}" == "full" ]]; then
+      fakeroot debian/rules binary
+    elif [[ "${build_type}" == "fast" ]]; then
+      fakeroot debian/rules binary-headers binary-generic binary-perarch
+    else
+      fakeroot debian/rules ${build_cmd}
+    fi
+  )
+}
+
+function main() {
+  # validate build type
+  case ${BUILD_TYPE} in
+    full)
+      ;;
+    fast)
+      ;;
+    custom)
+      ;;
+    *)
+      echo "Unknown BUILD_TYPE: should be either full, fast, or custom." >&2
+      exit 1
+      ;;
+  esac
+
+  if [ "$BUILD_TYPE" == "custom" -a -z "$BUILD_CMD" ]; then
+    # if build type is custom and build command is empty
+    echo "Custom build types need to specify BUILD_CMD." >&2
+    exit 1
+  fi
+
+  # do the thing
+  install-kernel-source
+
+  # patch and configure the kernel sources
+  patch-kernel
+  configure-kernel
+
+  # append a tag to the kernel package
+  update-kernel-version
+
+  # build it
+  build-kernel
+}
+
+if [[ ${BASH_SOURCE[0]} == $0 ]]; then
+   main
+fi

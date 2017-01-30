@@ -1,0 +1,7 @@
+.vagrant
+.git
+
+Vagrantfile
+
+ansible
+target
