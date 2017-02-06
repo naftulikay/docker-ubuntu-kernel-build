@@ -14,16 +14,16 @@ RUN apt-get build-dep -y linux-image-$(cat /tmp/kernel-release)-generic >/dev/nu
     apt-get install -y fakeroot >/dev/null && \
     apt-get clean >/dev/null
 
-RUN useradd -u 1000 -U build && \
-    install --directory -m 0755 -o build -g build /data
+RUN install --directory -m 0755 /data && \
+    install --directory -m 0755 /patches
 
 ADD scripts/kernel-build /usr/local/bin/kernel-build
 RUN chmod 0755 /usr/local/bin/kernel-build
 
-USER build
 WORKDIR /data
 
 VOLUME /data
 VOLUME /patches
 
+# we have to run as root so that we can apt-get update
 ENTRYPOINT ["/usr/local/bin/kernel-build"]

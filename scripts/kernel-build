@@ -15,6 +15,7 @@ function get-latest-kernel-version() {
 
 function install-kernel-source() {
   # source the kernel
+  apt-get update >/dev/null
   apt-get source linux-image-$(get-latest-kernel-version)-generic
 }
 
@@ -59,6 +60,8 @@ function update-kernel-version() {
       sed -i "1 s|^.*$|${before}${latest_kernel}+${build_tag}${after}|" debian.master/changelog
     fi
   )
+
+  return 0
 }
 
 function build-kernel() {
